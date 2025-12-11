@@ -1,0 +1,122 @@
+You are an expert full-stack TypeScript developer.
+I’m building a standalone License Server on Replit using:
+•	Backend: Node.js, Express, TypeScript
+•	DB: PostgreSQL (accessed via Prisma ORM)
+•	Frontend: React + TypeScript (Vite) as a simple admin UI
+Goal
+Build a small license server that:
+•	Generates signed license keys for my client app.
+•	Stores a history/audit trail of all generated keys and status changes.
+•	Exposes REST APIs.
+•	Provides a minimal React/TS admin front-end for managing licenses.
+Tech / Project Structure
+•	Monorepo style:
+o	/server – Express + Prisma + PostgreSQL (TypeScript)
+o	/client – React + TypeScript (Vite)
+•	Use dotenv for environment variables (DB URL, signing secret, etc.).
+•	Type-safe code everywhere (TS on both sides).
+Data model (Prisma + PostgreSQL)
+Use Prisma schema (in /server/prisma/schema.prisma) for at least:
+•	License
+o	id (string UUID or int)
+o	tenantId (string)
+o	modules (string[] or JSON field; modules are: "CUSTOM_PORTAL", "ASSET_MANAGEMENT", "SERVICE_DESK", "EPM")
+o	expiry (DateTime)
+o	licenseKey (string)
+o	status (enum: ACTIVE, REVOKED, EXPIRED)
+o	createdBy (string)
+o	createdAt (DateTime default now)
+o	updatedAt (DateTime default updated)
+•	LicenseEvent (audit log)
+o	id
+o	licenseId (FK → License)
+o	eventType (enum: CREATED, STATUS_CHANGED, VALIDATED)
+o	message (string)
+o	actor (string)
+o	createdAt (DateTime default now)
+Generate Prisma client and SQL migrations for PostgreSQL.
+License key format & security
+•	Define a license payload interface:
+•	interface LicensePayload {
+•	  tenantId: string;
+•	  modules: string[]; // allowed module keys
+•	  expiry: string;    // ISO string
+•	}
+•	Implement signing using JWT (HS256) with a secret from env (e.g. LICENSE_SIGNING_SECRET), or an HMAC-SHA256 signature — use whichever is simpler but keep it secure.
+•	Expose helper functions in a dedicated service file:
+o	generateLicenseKey(payload: LicensePayload): string
+o	verifyLicenseKey(token: string): { valid: boolean; reason?: string; payload?: LicensePayload }
+•	The license key returned to the client will be this signed token string.
+Backend API (Express, TypeScript)
+Implement these REST endpoints under /api:
+1.	POST /api/licenses
+o	Body:
+o	{
+o	  tenantId: string;
+o	  modules: string[];     // subset of the 4 known modules
+o	  expiry: string;        // ISO date string
+o	  createdBy: string;
+o	}
+o	Validates input.
+o	Creates a LicensePayload, signs it → licenseKey.
+o	Stores a new License row with status = 'ACTIVE'.
+o	Creates a LicenseEvent with eventType='CREATED'.
+o	Returns the full License record including licenseKey.
+2.	GET /api/licenses
+o	Supports simple pagination via query params page, pageSize.
+o	Returns list of licenses with basic info (id, tenantId, modules, expiry, status, createdAt).
+3.	GET /api/licenses/:id
+o	Returns:
+	License details.
+	Associated LicenseEvent list (history) ordered by createdAt desc.
+4.	POST /api/licenses/validate
+o	Body: { licenseKey: string }
+o	Uses the verify helper and (optionally) checks DB for that key.
+o	Responds with:
+o	{
+o	  valid: boolean;
+o	  reason: "OK" | "EXPIRED" | "INVALID_SIGNATURE" | "MALFORMED" | "NOT_FOUND";
+o	  payload?: LicensePayload;
+o	}
+o	Also writes a LicenseEvent with VALIDATED and the reason if the key exists in DB.
+5.	PATCH /api/licenses/:id/status
+o	Body: { status: "ACTIVE" | "REVOKED" }
+o	Updates License.status.
+o	Creates a LicenseEvent with STATUS_CHANGED.
+Don’t bother with sophisticated auth for now; treat everything as admin-only.
+Frontend (React + TypeScript, Vite)
+In /client:
+•	Use Vite + React + TypeScript.
+•	Use axios to call the backend.
+•	Basic pages/components:
+1.	License List – route /licenses
+	Table of all licenses with columns: Tenant, Modules, Expiry, Status, CreatedAt.
+	Each row has a “View” button → /licenses/:id.
+2.	License Detail – route /licenses/:id
+	Shows full license info (tenant, modules, expiry, status, key).
+	Shows history: list of LicenseEvents.
+	Button to change status (ACTIVE/REVOKED) via API.
+3.	New License Form – route /licenses/new
+	Form fields: tenantId (text), modules (checkboxes for the 4 modules), expiry (date), createdBy (text).
+	On submit, call POST /api/licenses, then navigate to details or list.
+•	Add simple routing using react-router-dom.
+•	Styling can be minimal (basic CSS or Tailwind if you prefer).
+Server-frontend integration
+•	During development on Replit:
+o	Backend runs on e.g. http://localhost:4000
+o	Frontend runs on e.g. http://localhost:5173
+o	Configure CORS on Express.
+o	Set the API base URL in a config file or .env on the client.
+What I expect from you
+•	Generate all necessary code for:
+o	/server (Express + TS + Prisma + Postgres, with the routes above).
+o	/client (React + TS, Vite, pages above).
+•	Include Prisma schema, migration, and a small README / instructions:
+o	How to set DATABASE_URL for PostgreSQL.
+o	How to set LICENSE_SIGNING_SECRET.
+o	Commands to:
+	Install dependencies.
+	Run Prisma migration.
+	Start backend.
+	Start frontend.
+•	Ensure the code is consistent and runnable on docker with minimal manual edits.
