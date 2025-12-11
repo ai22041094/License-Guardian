@@ -24,7 +24,19 @@ import {
   History,
   Check,
   RefreshCw,
+  CalendarPlus,
 } from "lucide-react";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { useState } from "react";
 
 interface LicenseDetailResponse {
@@ -78,6 +90,99 @@ function EventIcon({ eventType }: { eventType: string }) {
     default:
       return <Clock className="w-4 h-4 text-muted-foreground" />;
   }
+}
+
+function ExtendLicenseDialog({ license, onSuccess }: { license: License; onSuccess: () => void }) {
+  const [open, setOpen] = useState(false);
+  const [newExpiry, setNewExpiry] = useState("");
+  const { toast } = useToast();
+
+  const extendMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("PATCH", `/api/licenses/${license.id}/extend`, { newExpiry });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/licenses", license.id] });
+      queryClient.invalidateQueries({ queryKey: ["/api/licenses"] });
+      toast({
+        title: "License extended",
+        description: "The license has been extended with a new expiry date and key.",
+      });
+      setOpen(false);
+      setNewExpiry("");
+      onSuccess();
+    },
+    onError: (error) => {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: error instanceof Error ? error.message : "Failed to extend license",
+      });
+    },
+  });
+
+  const currentExpiry = new Date(license.expiry);
+  const minDate = new Date();
+  minDate.setDate(minDate.getDate() + 1);
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button variant="outline" className="w-full" data-testid="button-extend-license">
+          <CalendarPlus className="w-4 h-4 mr-2" />
+          Extend License
+        </Button>
+      </DialogTrigger>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Extend License</DialogTitle>
+          <DialogDescription>
+            Extend the license expiry date. A new license key will be generated.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-4 py-4">
+          <div className="p-4 bg-muted rounded-md space-y-2">
+            <div className="text-sm text-muted-foreground">Current Expiry Date</div>
+            <div className="font-medium">{format(currentExpiry, "MMMM d, yyyy")}</div>
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="new-expiry">New Expiry Date</Label>
+            <Input
+              id="new-expiry"
+              type="date"
+              value={newExpiry}
+              min={minDate.toISOString().split('T')[0]}
+              onChange={(e) => setNewExpiry(e.target.value)}
+              data-testid="input-new-expiry"
+            />
+          </div>
+          <div className="p-3 bg-amber-500/10 rounded-md text-sm text-amber-700 dark:text-amber-400">
+            Note: Extending the license will generate a new license key. The old key will no longer be valid.
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => setOpen(false)}>
+            Cancel
+          </Button>
+          <Button
+            onClick={() => extendMutation.mutate()}
+            disabled={!newExpiry || extendMutation.isPending}
+            data-testid="button-confirm-extend"
+          >
+            {extendMutation.isPending ? (
+              <>
+                <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
+                Extending...
+              </>
+            ) : (
+              "Extend License"
+            )}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
 }
 
 function DetailSkeleton() {
@@ -417,6 +522,8 @@ export default function LicenseDetailPage() {
                   )}
                 </Button>
               ) : null}
+
+              <ExtendLicenseDialog license={license} onSuccess={() => {}} />
 
               <Button
                 variant="outline"

@@ -13,7 +13,7 @@ import {
   SidebarFooter,
 } from "@/components/ui/sidebar";
 import { Button } from "@/components/ui/button";
-import { Key, LayoutDashboard, Plus, LogOut, Shield } from "lucide-react";
+import { Key, LayoutDashboard, Plus, LogOut, Shield, Users } from "lucide-react";
 
 const menuItems = [
   {
@@ -25,6 +25,11 @@ const menuItems = [
     title: "New License",
     url: "/licenses/new",
     icon: Plus,
+  },
+  {
+    title: "User Management",
+    url: "/users",
+    icon: Users,
   },
 ];
 

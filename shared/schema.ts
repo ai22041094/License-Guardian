@@ -4,19 +4,40 @@ import { relations } from "drizzle-orm";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
+export const userRoleEnum = pgEnum("user_role", ["ADMIN", "USER"]);
+
 export const users = pgTable("users", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   username: text("username").notNull().unique(),
   password: text("password").notNull(),
+  role: userRoleEnum("role").notNull().default("USER"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
 export const insertUserSchema = createInsertSchema(users).pick({
   username: true,
   password: true,
+  role: true,
 });
 
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type User = typeof users.$inferSelect;
+
+export const createUserRequestSchema = z.object({
+  username: z.string().min(3, "Username must be at least 3 characters"),
+  password: z.string().min(6, "Password must be at least 6 characters"),
+  role: z.enum(["ADMIN", "USER"]).default("USER"),
+});
+
+export type CreateUserRequest = z.infer<typeof createUserRequestSchema>;
+
+export const updateUserRequestSchema = z.object({
+  username: z.string().min(3, "Username must be at least 3 characters").optional(),
+  password: z.string().min(6, "Password must be at least 6 characters").optional(),
+  role: z.enum(["ADMIN", "USER"]).optional(),
+});
+
+export type UpdateUserRequest = z.infer<typeof updateUserRequestSchema>;
 
 export const licenseStatusEnum = pgEnum("license_status", ["ACTIVE", "REVOKED", "EXPIRED"]);
 
@@ -110,3 +131,17 @@ export const updateLicenseStatusSchema = z.object({
 });
 
 export type UpdateLicenseStatusRequest = z.infer<typeof updateLicenseStatusSchema>;
+
+export const extendLicenseSchema = z.object({
+  newExpiry: z.string().min(1, "New expiry date is required").refine((date) => {
+    const parsed = new Date(date);
+    return !isNaN(parsed.getTime());
+  }, "Invalid date format").refine((date) => {
+    const parsed = new Date(date);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    return parsed > today;
+  }, "Expiry date must be in the future"),
+});
+
+export type ExtendLicenseRequest = z.infer<typeof extendLicenseSchema>;

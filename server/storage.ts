@@ -7,16 +7,20 @@ import {
   type License, 
   type InsertLicense,
   type LicenseEvent,
-  type InsertLicenseEvent 
+  type InsertLicenseEvent,
+  type UpdateUserRequest
 } from "@shared/schema";
 import { db } from "./db";
-import { eq, desc } from "drizzle-orm";
+import { eq, desc, ne } from "drizzle-orm";
 import bcrypt from "bcryptjs";
 
 export interface IStorage {
   getUser(id: string): Promise<User | undefined>;
   getUserByUsername(username: string): Promise<User | undefined>;
+  getAllUsers(): Promise<User[]>;
   createUser(user: InsertUser): Promise<User>;
+  updateUser(id: string, data: UpdateUserRequest): Promise<User | undefined>;
+  deleteUser(id: string): Promise<boolean>;
   validateUserPassword(username: string, password: string): Promise<User | null>;
 
   getAllLicenses(): Promise<License[]>;
@@ -24,6 +28,7 @@ export interface IStorage {
   getLicenseByKey(licenseKey: string): Promise<License | undefined>;
   createLicense(license: Omit<License, "id" | "createdAt" | "updatedAt">): Promise<License>;
   updateLicenseStatus(id: string, status: "ACTIVE" | "REVOKED" | "EXPIRED"): Promise<License | undefined>;
+  extendLicense(id: string, newExpiry: Date, newLicenseKey: string, reactivate?: boolean): Promise<License | undefined>;
 
   getLicenseEvents(licenseId: string): Promise<LicenseEvent[]>;
   createLicenseEvent(event: InsertLicenseEvent): Promise<LicenseEvent>;
@@ -42,6 +47,10 @@ export class DatabaseStorage implements IStorage {
     return user || undefined;
   }
 
+  async getAllUsers(): Promise<User[]> {
+    return db.select().from(users).orderBy(desc(users.createdAt));
+  }
+
   async createUser(insertUser: InsertUser): Promise<User> {
     const hashedPassword = await bcrypt.hash(insertUser.password, 10);
     const [user] = await db
@@ -49,6 +58,36 @@ export class DatabaseStorage implements IStorage {
       .values({ ...insertUser, password: hashedPassword })
       .returning();
     return user;
+  }
+
+  async updateUser(id: string, data: UpdateUserRequest): Promise<User | undefined> {
+    const updateData: Partial<{ username: string; password: string; role: "ADMIN" | "USER" }> = {};
+    
+    if (data.username) {
+      updateData.username = data.username;
+    }
+    if (data.password) {
+      updateData.password = await bcrypt.hash(data.password, 10);
+    }
+    if (data.role) {
+      updateData.role = data.role;
+    }
+
+    if (Object.keys(updateData).length === 0) {
+      return this.getUser(id);
+    }
+
+    const [updated] = await db
+      .update(users)
+      .set(updateData)
+      .where(eq(users.id, id))
+      .returning();
+    return updated || undefined;
+  }
+
+  async deleteUser(id: string): Promise<boolean> {
+    const result = await db.delete(users).where(eq(users.id, id)).returning();
+    return result.length > 0;
   }
 
   async validateUserPassword(username: string, password: string): Promise<User | null> {
@@ -99,6 +138,25 @@ export class DatabaseStorage implements IStorage {
     return updated || undefined;
   }
 
+  async extendLicense(id: string, newExpiry: Date, newLicenseKey: string, reactivate: boolean = true): Promise<License | undefined> {
+    const license = await this.getLicenseById(id);
+    if (!license) return undefined;
+
+    const newStatus = license.status === "REVOKED" && !reactivate ? "REVOKED" : "ACTIVE";
+    
+    const [updated] = await db
+      .update(licenses)
+      .set({ 
+        expiry: newExpiry, 
+        licenseKey: newLicenseKey,
+        status: newStatus,
+        updatedAt: new Date() 
+      })
+      .where(eq(licenses.id, id))
+      .returning();
+    return updated || undefined;
+  }
+
   async getLicenseEvents(licenseId: string): Promise<LicenseEvent[]> {
     return db
       .select()
@@ -121,8 +179,12 @@ export class DatabaseStorage implements IStorage {
       await this.createUser({
         username: "admin",
         password: "P@ssw0rd@123",
+        role: "ADMIN",
       });
       console.log("Default admin user created: admin / P@ssw0rd@123");
+    } else if (existingAdmin.role !== "ADMIN") {
+      await this.updateUser(existingAdmin.id, { role: "ADMIN" });
+      console.log("Default admin user role updated to ADMIN");
     }
   }
 }

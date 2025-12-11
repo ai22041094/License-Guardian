@@ -1,0 +1,72 @@
+version: '3.8'
+
+services:
+  app:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: license-server-app
+    restart: unless-stopped
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=${DATABASE_URL}
+      - SESSION_SECRET=${SESSION_SECRET}
+      - JWT_SECRET=${JWT_SECRET}
+      - REDIS_URL=redis://redis:6379
+    depends_on:
+      - postgres
+      - redis
+    networks:
+      - license-network
+    expose:
+      - "5000"
+
+  postgres:
+    image: postgres:15-alpine
+    container_name: license-server-postgres
+    restart: unless-stopped
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER:-license_admin}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-license_secret_password}
+      - POSTGRES_DB=${POSTGRES_DB:-license_server}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - license-network
+    expose:
+      - "5432"
+
+  redis:
+    image: redis:7-alpine
+    container_name: license-server-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    networks:
+      - license-network
+    expose:
+      - "6379"
+
+  nginx:
+    image: nginx:alpine
+    container_name: license-server-nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/ssl:/etc/nginx/ssl:ro
+    depends_on:
+      - app
+    networks:
+      - license-network
+
+networks:
+  license-network:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  redis_data:

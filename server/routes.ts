@@ -7,6 +7,9 @@ import {
   createLicenseRequestSchema, 
   validateLicenseRequestSchema, 
   updateLicenseStatusSchema,
+  extendLicenseSchema,
+  createUserRequestSchema,
+  updateUserRequestSchema,
   type LicensePayload 
 } from "@shared/schema";
 
@@ -15,6 +18,7 @@ const JWT_SECRET = process.env.JWT_SECRET || process.env.SESSION_SECRET || "lice
 interface JwtPayload {
   userId: string;
   username: string;
+  role?: string;
 }
 
 declare global {
@@ -37,6 +41,30 @@ function requireAuth(req: Request, res: Response, next: NextFunction) {
   try {
     const decoded = jwt.verify(token, JWT_SECRET) as JwtPayload;
     req.user = decoded;
+    next();
+  } catch (error) {
+    return res.status(401).json({ error: "Invalid token" });
+  }
+}
+
+async function requireAdmin(req: Request, res: Response, next: NextFunction) {
+  const authHeader = req.headers.authorization;
+  
+  if (!authHeader || !authHeader.startsWith("Bearer ")) {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+
+  const token = authHeader.substring(7);
+  
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET) as JwtPayload;
+    req.user = decoded;
+    
+    const user = await storage.getUser(decoded.userId);
+    if (!user || user.role !== "ADMIN") {
+      return res.status(403).json({ error: "Admin access required" });
+    }
+    
     next();
   } catch (error) {
     return res.status(401).json({ error: "Invalid token" });
@@ -297,6 +325,159 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Update license status error:", error);
       res.status(500).send("Failed to update license status");
+    }
+  });
+
+  app.patch("/api/licenses/:id/extend", requireAuth, async (req, res) => {
+    try {
+      const { id } = req.params;
+      
+      const validationResult = extendLicenseSchema.safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: validationResult.error.errors 
+        });
+      }
+
+      const { newExpiry } = validationResult.data;
+      const reactivate = req.body.reactivate !== false;
+
+      const existingLicense = await storage.getLicenseById(id);
+      if (!existingLicense) {
+        return res.status(404).json({ error: "License not found" });
+      }
+
+      if (existingLicense.status === "REVOKED" && !reactivate) {
+        return res.status(400).json({ 
+          error: "Cannot extend revoked license without reactivation",
+          isRevoked: true 
+        });
+      }
+
+      const newExpiryDate = new Date(newExpiry);
+      const payload: LicensePayload = {
+        tenantId: existingLicense.tenantId,
+        modules: existingLicense.modules,
+        expiry: newExpiryDate.toISOString(),
+      };
+
+      const newLicenseKey = generateLicenseKey(payload);
+      const updatedLicense = await storage.extendLicense(id, newExpiryDate, newLicenseKey, reactivate);
+
+      if (updatedLicense) {
+        const statusMessage = existingLicense.status === "REVOKED" && reactivate 
+          ? ` License reactivated.` 
+          : '';
+        await storage.createLicenseEvent({
+          licenseId: id,
+          eventType: "STATUS_CHANGED",
+          message: `License extended to ${newExpiryDate.toISOString().split('T')[0]}. New license key generated.${statusMessage}`,
+          actor: req.user?.username || "admin",
+        });
+      }
+
+      res.json(updatedLicense);
+    } catch (error) {
+      console.error("Extend license error:", error);
+      res.status(500).send("Failed to extend license");
+    }
+  });
+
+  app.get("/api/users", requireAdmin, async (req, res) => {
+    try {
+      const users = await storage.getAllUsers();
+      const safeUsers = users.map(u => ({ id: u.id, username: u.username, role: u.role, createdAt: u.createdAt }));
+      res.json(safeUsers);
+    } catch (error) {
+      console.error("Get users error:", error);
+      res.status(500).send("Failed to get users");
+    }
+  });
+
+  app.post("/api/users", requireAdmin, async (req, res) => {
+    try {
+      const validationResult = createUserRequestSchema.safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: validationResult.error.errors 
+        });
+      }
+
+      const { username, password, role } = validationResult.data;
+
+      const existingUser = await storage.getUserByUsername(username);
+      if (existingUser) {
+        return res.status(400).json({ error: "Username already exists" });
+      }
+
+      const user = await storage.createUser({ username, password, role });
+      res.status(201).json({ id: user.id, username: user.username, role: user.role, createdAt: user.createdAt });
+    } catch (error) {
+      console.error("Create user error:", error);
+      res.status(500).send("Failed to create user");
+    }
+  });
+
+  app.patch("/api/users/:id", requireAdmin, async (req, res) => {
+    try {
+      const { id } = req.params;
+      
+      const validationResult = updateUserRequestSchema.safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          error: "Validation failed", 
+          details: validationResult.error.errors 
+        });
+      }
+
+      const existingUser = await storage.getUser(id);
+      if (!existingUser) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      if (validationResult.data.username) {
+        const userWithSameUsername = await storage.getUserByUsername(validationResult.data.username);
+        if (userWithSameUsername && userWithSameUsername.id !== id) {
+          return res.status(400).json({ error: "Username already exists" });
+        }
+      }
+
+      const updatedUser = await storage.updateUser(id, validationResult.data);
+      if (updatedUser) {
+        res.json({ id: updatedUser.id, username: updatedUser.username, role: updatedUser.role, createdAt: updatedUser.createdAt });
+      } else {
+        res.status(404).json({ error: "User not found" });
+      }
+    } catch (error) {
+      console.error("Update user error:", error);
+      res.status(500).send("Failed to update user");
+    }
+  });
+
+  app.delete("/api/users/:id", requireAdmin, async (req, res) => {
+    try {
+      const { id } = req.params;
+
+      const existingUser = await storage.getUser(id);
+      if (!existingUser) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      if (existingUser.username === "admin") {
+        return res.status(400).json({ error: "Cannot delete the default admin user" });
+      }
+
+      const deleted = await storage.deleteUser(id);
+      if (deleted) {
+        res.json({ success: true });
+      } else {
+        res.status(404).json({ error: "User not found" });
+      }
+    } catch (error) {
+      console.error("Delete user error:", error);
+      res.status(500).send("Failed to delete user");
     }
   });
 
