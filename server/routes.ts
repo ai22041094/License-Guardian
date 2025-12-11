@@ -1,6 +1,6 @@
 import type { Express, Request, Response, NextFunction } from "express";
 import { createServer, type Server } from "http";
-import session from "express-session";
+import jwt from "jsonwebtoken";
 import { storage } from "./storage";
 import { generateLicenseKey, verifyLicenseKey } from "./license-service";
 import { 
@@ -9,21 +9,38 @@ import {
   updateLicenseStatusSchema,
   type LicensePayload 
 } from "@shared/schema";
-import { z } from "zod";
-import pgSession from "connect-pg-simple";
-import { pool } from "./db";
 
-declare module "express-session" {
-  interface SessionData {
-    userId?: string;
+const JWT_SECRET = process.env.JWT_SECRET || process.env.SESSION_SECRET || "license-server-jwt-secret";
+
+interface JwtPayload {
+  userId: string;
+  username: string;
+}
+
+declare global {
+  namespace Express {
+    interface Request {
+      user?: JwtPayload;
+    }
   }
 }
 
 function requireAuth(req: Request, res: Response, next: NextFunction) {
-  if (!req.session.userId) {
+  const authHeader = req.headers.authorization;
+  
+  if (!authHeader || !authHeader.startsWith("Bearer ")) {
     return res.status(401).json({ error: "Unauthorized" });
   }
-  next();
+
+  const token = authHeader.substring(7);
+  
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET) as JwtPayload;
+    req.user = decoded;
+    next();
+  } catch (error) {
+    return res.status(401).json({ error: "Invalid token" });
+  }
 }
 
 export async function registerRoutes(
@@ -31,32 +48,6 @@ export async function registerRoutes(
   app: Express
 ): Promise<Server> {
   await storage.initializeDefaultAdmin();
-
-  const PgSession = pgSession(session);
-  
-  app.set("trust proxy", 1);
-  
-  const isProduction = process.env.NODE_ENV === "production";
-  const isReplit = !!process.env.REPL_ID;
-  
-  app.use(
-    session({
-      store: new PgSession({
-        pool: pool,
-        tableName: "session",
-        createTableIfMissing: true,
-      }),
-      secret: process.env.SESSION_SECRET || "license-server-session-secret",
-      resave: false,
-      saveUninitialized: false,
-      cookie: {
-        secure: isProduction || isReplit,
-        httpOnly: true,
-        maxAge: 24 * 60 * 60 * 1000,
-        sameSite: isReplit ? "none" : "lax",
-      },
-    })
-  );
 
   app.post("/api/auth/login", async (req, res) => {
     try {
@@ -71,13 +62,15 @@ export async function registerRoutes(
         return res.status(401).send("Invalid credentials");
       }
 
-      req.session.userId = user.id;
-      req.session.save((err) => {
-        if (err) {
-          console.error("Session save error:", err);
-          return res.status(500).send("Failed to save session");
-        }
-        res.json({ user: { id: user.id, username: user.username } });
+      const token = jwt.sign(
+        { userId: user.id, username: user.username },
+        JWT_SECRET,
+        { expiresIn: "24h" }
+      );
+
+      res.json({ 
+        token,
+        user: { id: user.id, username: user.username } 
       });
     } catch (error) {
       console.error("Login error:", error);
@@ -86,26 +79,30 @@ export async function registerRoutes(
   });
 
   app.post("/api/auth/logout", (req, res) => {
-    req.session.destroy((err) => {
-      if (err) {
-        return res.status(500).send("Failed to logout");
-      }
-      res.clearCookie("connect.sid");
-      res.json({ success: true });
-    });
+    res.json({ success: true });
   });
 
   app.get("/api/auth/me", async (req, res) => {
-    if (!req.session.userId) {
+    const authHeader = req.headers.authorization;
+    
+    if (!authHeader || !authHeader.startsWith("Bearer ")) {
       return res.status(401).json({ error: "Not authenticated" });
     }
 
-    const user = await storage.getUser(req.session.userId);
-    if (!user) {
-      return res.status(401).json({ error: "User not found" });
-    }
+    const token = authHeader.substring(7);
+    
+    try {
+      const decoded = jwt.verify(token, JWT_SECRET) as JwtPayload;
+      const user = await storage.getUser(decoded.userId);
+      
+      if (!user) {
+        return res.status(401).json({ error: "User not found" });
+      }
 
-    res.json({ user: { id: user.id, username: user.username } });
+      res.json({ user: { id: user.id, username: user.username } });
+    } catch (error) {
+      return res.status(401).json({ error: "Invalid token" });
+    }
   });
 
   app.post("/api/licenses", requireAuth, async (req, res) => {
@@ -288,12 +285,11 @@ export async function registerRoutes(
       const updatedLicense = await storage.updateLicenseStatus(id, status);
 
       if (updatedLicense) {
-        const user = await storage.getUser(req.session.userId!);
         await storage.createLicenseEvent({
           licenseId: id,
           eventType: "STATUS_CHANGED",
           message: `License status changed from ${oldStatus} to ${status}`,
-          actor: user?.username || "admin",
+          actor: req.user?.username || "admin",
         });
       }
 
