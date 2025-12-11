@@ -25,9 +25,11 @@ Preferred communication style: Simple, everyday language.
 - **Session Management**: Express sessions with PostgreSQL session store (connect-pg-simple)
 
 ### Authentication
-- **Method**: Session-based authentication with bcryptjs password hashing
-- **Session Store**: PostgreSQL-backed sessions for persistence across restarts
-- **Default Admin**: System initializes with a default admin user on startup
+- **Method**: JWT token-based authentication (switched from sessions due to Replit iframe cookie restrictions)
+- **Token Storage**: Client stores JWT in localStorage
+- **Token Lifetime**: 24 hours
+- **Password Hashing**: bcryptjs
+- **Default Admin**: System initializes with a default admin user on startup (admin / P@ssw0rd@123)
 
 ### License Key Security
 - **Signing Method**: JWT (HS256) using jsonwebtoken library
