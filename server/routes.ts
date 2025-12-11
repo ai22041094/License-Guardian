@@ -36,6 +36,9 @@ export async function registerRoutes(
   
   app.set("trust proxy", 1);
   
+  const isProduction = process.env.NODE_ENV === "production";
+  const isReplit = !!process.env.REPL_ID;
+  
   app.use(
     session({
       store: new PgSession({
@@ -47,10 +50,10 @@ export async function registerRoutes(
       resave: false,
       saveUninitialized: false,
       cookie: {
-        secure: process.env.NODE_ENV === "production",
+        secure: isProduction || isReplit,
         httpOnly: true,
         maxAge: 24 * 60 * 60 * 1000,
-        sameSite: "lax",
+        sameSite: isReplit ? "none" : "lax",
       },
     })
   );
