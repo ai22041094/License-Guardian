@@ -69,7 +69,13 @@ export async function registerRoutes(
       }
 
       req.session.userId = user.id;
-      res.json({ user: { id: user.id, username: user.username } });
+      req.session.save((err) => {
+        if (err) {
+          console.error("Session save error:", err);
+          return res.status(500).send("Failed to save session");
+        }
+        res.json({ user: { id: user.id, username: user.username } });
+      });
     } catch (error) {
       console.error("Login error:", error);
       res.status(500).send("Internal server error");
