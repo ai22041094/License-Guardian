@@ -481,5 +481,20 @@ export async function registerRoutes(
     }
   });
 
+  app.post("/api/settings/generate-secret", requireAdmin, async (req, res) => {
+    try {
+      const { length = 32 } = req.body;
+      const clampedLength = Math.min(Math.max(Number(length) || 32, 16), 64);
+      
+      const crypto = await import("crypto");
+      const secret = crypto.randomBytes(clampedLength).toString("base64");
+      
+      res.json({ secret });
+    } catch (error) {
+      console.error("Generate secret error:", error);
+      res.status(500).send("Failed to generate secret");
+    }
+  });
+
   return httpServer;
 }

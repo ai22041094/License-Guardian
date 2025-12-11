@@ -11,6 +11,7 @@ import LicensesPage from "@/pages/licenses";
 import LicenseDetailPage from "@/pages/license-detail";
 import NewLicensePage from "@/pages/new-license";
 import UsersPage from "@/pages/users";
+import SettingsPage from "@/pages/settings";
 import NotFound from "@/pages/not-found";
 import { Skeleton } from "@/components/ui/skeleton";
 
@@ -76,6 +77,9 @@ function Router() {
       </Route>
       <Route path="/users">
         <ProtectedRoute component={UsersPage} />
+      </Route>
+      <Route path="/settings">
+        <ProtectedRoute component={SettingsPage} />
       </Route>
       <Route path="/">
         <Redirect to="/licenses" />

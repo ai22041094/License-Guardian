@@ -13,7 +13,7 @@ import {
   SidebarFooter,
 } from "@/components/ui/sidebar";
 import { Button } from "@/components/ui/button";
-import { Key, LayoutDashboard, Plus, LogOut, Shield, Users } from "lucide-react";
+import { Key, LayoutDashboard, Plus, LogOut, Shield, Users, Settings } from "lucide-react";
 
 const menuItems = [
   {
@@ -30,6 +30,11 @@ const menuItems = [
     title: "User Management",
     url: "/users",
     icon: Users,
+  },
+  {
+    title: "Settings",
+    url: "/settings",
+    icon: Settings,
   },
 ];
 
