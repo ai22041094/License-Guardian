@@ -34,6 +34,8 @@ export async function registerRoutes(
 
   const PgSession = pgSession(session);
   
+  app.set("trust proxy", 1);
+  
   app.use(
     session({
       store: new PgSession({
@@ -45,9 +47,10 @@ export async function registerRoutes(
       resave: false,
       saveUninitialized: false,
       cookie: {
-        secure: false,
+        secure: process.env.NODE_ENV === "production",
         httpOnly: true,
         maxAge: 24 * 60 * 60 * 1000,
+        sameSite: "lax",
       },
     })
   );
