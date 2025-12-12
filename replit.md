@@ -44,8 +44,20 @@ Preferred communication style: Simple, everyday language.
 
 ### Key Data Models
 - **Users**: Admin users with username/password authentication
-- **Licenses**: Core license records with tenantId, modules, expiry, status (ACTIVE/REVOKED/EXPIRED)
-- **LicenseEvents**: Audit log tracking CREATED, STATUS_CHANGED, VALIDATED events
+- **Licenses**: Core license records with tenantId, modules, expiry, status (ACTIVE/REVOKED/EXPIRED), maxActivations
+- **LicenseActivations**: Machine-bound activation records with hardwareId, publicIp, activatedAt
+- **LicenseEvents**: Audit log tracking CREATED, STATUS_CHANGED, VALIDATED, ACTIVATED events
+
+### Machine-Bound Activation
+- **Purpose**: Limits license usage to specific hardware machines
+- **Endpoint**: `POST /api/licenses/activate` (public, no auth required)
+- **Request**: `{ licenseKey: string, hardwareId: string }`
+- **Behavior**: 
+  - Validates license status (must be ACTIVE) and expiry
+  - Checks if hardware is already activated (returns success if so)
+  - Enforces maxActivations limit per license
+  - Records public IP address of activating machine
+  - Creates audit event for each activation attempt
 
 ### Project Structure
 ```
