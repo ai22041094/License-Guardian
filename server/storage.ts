@@ -1,17 +1,20 @@
 import { 
   users, 
   licenses, 
-  licenseEvents, 
+  licenseEvents,
+  licenseActivations,
   type User, 
   type InsertUser, 
   type License, 
   type InsertLicense,
   type LicenseEvent,
   type InsertLicenseEvent,
+  type LicenseActivation,
+  type InsertLicenseActivation,
   type UpdateUserRequest
 } from "@shared/schema";
 import { db } from "./db";
-import { eq, desc, ne } from "drizzle-orm";
+import { eq, desc, and } from "drizzle-orm";
 import bcrypt from "bcryptjs";
 
 export interface IStorage {
@@ -32,6 +35,10 @@ export interface IStorage {
 
   getLicenseEvents(licenseId: string): Promise<LicenseEvent[]>;
   createLicenseEvent(event: InsertLicenseEvent): Promise<LicenseEvent>;
+
+  getLicenseActivations(licenseId: string): Promise<LicenseActivation[]>;
+  getActivationByHardwareId(licenseId: string, hardwareId: string): Promise<LicenseActivation | undefined>;
+  createLicenseActivation(activation: InsertLicenseActivation): Promise<LicenseActivation>;
 
   initializeDefaultAdmin(): Promise<void>;
 }
@@ -169,6 +176,33 @@ export class DatabaseStorage implements IStorage {
     const [created] = await db
       .insert(licenseEvents)
       .values(event)
+      .returning();
+    return created;
+  }
+
+  async getLicenseActivations(licenseId: string): Promise<LicenseActivation[]> {
+    return db
+      .select()
+      .from(licenseActivations)
+      .where(eq(licenseActivations.licenseId, licenseId))
+      .orderBy(desc(licenseActivations.createdAt));
+  }
+
+  async getActivationByHardwareId(licenseId: string, hardwareId: string): Promise<LicenseActivation | undefined> {
+    const [activation] = await db
+      .select()
+      .from(licenseActivations)
+      .where(and(
+        eq(licenseActivations.licenseId, licenseId),
+        eq(licenseActivations.hardwareId, hardwareId)
+      ));
+    return activation || undefined;
+  }
+
+  async createLicenseActivation(activation: InsertLicenseActivation): Promise<LicenseActivation> {
+    const [created] = await db
+      .insert(licenseActivations)
+      .values(activation)
       .returning();
     return created;
   }
