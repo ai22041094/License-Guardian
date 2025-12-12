@@ -48,6 +48,7 @@ export const licenses = pgTable("licenses", {
   expiry: timestamp("expiry").notNull(),
   licenseKey: text("license_key").notNull(),
   status: licenseStatusEnum("status").notNull().default("ACTIVE"),
+  maxActivations: integer("max_activations").notNull().default(1),
   createdBy: text("created_by").notNull(),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
@@ -55,6 +56,22 @@ export const licenses = pgTable("licenses", {
 
 export const licensesRelations = relations(licenses, ({ many }) => ({
   events: many(licenseEvents),
+  activations: many(licenseActivations),
+}));
+
+export const licenseActivations = pgTable("license_activations", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  licenseId: varchar("license_id").notNull().references(() => licenses.id, { onDelete: "cascade" }),
+  hardwareId: text("hardware_id").notNull(),
+  publicIp: text("public_ip"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const licenseActivationsRelations = relations(licenseActivations, ({ one }) => ({
+  license: one(licenses, {
+    fields: [licenseActivations.licenseId],
+    references: [licenses.id],
+  }),
 }));
 
 export const insertLicenseSchema = createInsertSchema(licenses).omit({
@@ -109,7 +126,19 @@ export interface LicensePayload {
   tenantId: string;
   modules: string[];
   expiry: string;
+  hardwareId?: string;
+  publicIp?: string;
 }
+
+export type LicenseActivation = typeof licenseActivations.$inferSelect;
+export type InsertLicenseActivation = typeof licenseActivations.$inferInsert;
+
+export const activateLicenseRequestSchema = z.object({
+  licenseKey: z.string().min(1, "License key is required"),
+  hardwareId: z.string().min(1, "Hardware ID is required"),
+});
+
+export type ActivateLicenseRequest = z.infer<typeof activateLicenseRequestSchema>;
 
 export const createLicenseRequestSchema = z.object({
   tenantId: z.string().min(1, "Tenant ID is required"),

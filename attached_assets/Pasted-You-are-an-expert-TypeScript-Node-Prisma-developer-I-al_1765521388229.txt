@@ -1,0 +1,208 @@
+You are an expert TypeScript / Node / Prisma developer.
+I already have a working License Server built with:
+
+Node.js + Express + TypeScript
+
+PostgreSQL using Prisma
+
+React + TypeScript admin UI
+
+It can already generate license keys and validate them.
+
+I want you to extend the existing codebase, not rewrite from scratch.
+
+Goal
+
+Add machine-bound activation support so that:
+
+A license key can only be activated on limited machines (initially 1).
+
+Each activation is bound to a hardwareId sent by the client.
+
+The server captures and stores the public IP on activation.
+
+The activation endpoint returns a machine-bound token (signed like the existing licenses) that includes hardwareId and publicIp.
+
+This logic must work whether the client runs directly on a host or inside Docker.
+
+1. Update / add Prisma models
+
+I already have a License model. Extend it and add a new model:
+
+License
+
+Keep existing fields (id, tenantId, modules, expiry, licenseKey, status, etc.).
+
+Add:
+
+maxActivations Int @default(1) // how many unique machines can activate
+
+Relation to LicenseActivation[].
+
+LicenseActivation
+
+id String @id @default(uuid())
+
+licenseId String
+
+hardwareId String // machine fingerprint from client
+
+publicIp String?
+
+createdAt DateTime @default(now())
+
+license License @relation(fields: [licenseId], references: [id])
+
+Generate and include any necessary Prisma migration for PostgreSQL.
+
+2. License payload and signing
+
+I already have a helper to sign and verify license payloads (JWT or HMAC).
+Extend the TypeScript interface for the payload to:
+
+export interface LicensePayload {
+  tenantId: string;
+  modules: string[];
+  expiry: string;    // ISO string
+  hardwareId: string;
+  publicIp?: string;
+}
+
+
+Keep using the existing signing mechanism (JWT or HMAC with a secret, e.g. LICENSE_SIGNING_SECRET).
+
+Export helper functions like:
+
+signLicensePayload(payload: LicensePayload): string
+
+verifyLicenseToken(token: string): { valid: boolean; reason?: string; payload?: LicensePayload }
+
+Use these helpers in the new activation endpoint.
+
+3. New activation endpoint
+
+Add a new Express route in the existing API (e.g. src/routes/licenseRoutes.ts):
+
+POST /api/licenses/activate
+
+
+Request body:
+
+{
+  licenseKey: string;
+  hardwareId: string;
+}
+
+
+(Optionally accept publicIp from the client, but server should still capture it itself.)
+
+Implementation details:
+
+Look up the License by licenseKey.
+
+If not found or status is not ACTIVE → return { ok: false, reason: "INVALID_LICENSE" } (HTTP 400).
+
+Check expiry against current time.
+
+If expired → { ok: false, reason: "EXPIRED" } (HTTP 400).
+
+Get the public IP from the request:
+
+Prefer X-Forwarded-For header (first value).
+
+Fallback to req.socket.remoteAddress.
+
+Example logic:
+
+const forwarded = (req.headers["x-forwarded-for"] as string) || "";
+const publicIp = forwarded.split(",")[0].trim() || req.socket.remoteAddress || "";
+
+
+Load existing activations:
+
+const activations = await prisma.licenseActivation.findMany({
+  where: { licenseId: license.id },
+});
+
+
+If there is already an activation with the same hardwareId, reuse it (no need to create a new row).
+
+If there is no activation for this hardwareId and activations.length >= maxActivations, reject with:
+
+{ "ok": false, "reason": "MAX_ACTIVATIONS_REACHED" }
+
+
+If this is a new hardwareId and under the limit:
+
+Create a new LicenseActivation row with hardwareId and publicIp.
+
+Build a machine-bound payload:
+
+const payload: LicensePayload = {
+  tenantId: license.tenantId,
+  modules: license.modules,
+  expiry: license.expiry.toISOString(),
+  hardwareId,
+  publicIp,
+};
+
+
+Sign the payload with the existing helper:
+
+const token = signLicensePayload(payload);
+
+
+Return:
+
+res.json({
+  ok: true,
+  token,       // machine-bound token
+  payload,
+});
+
+
+Optionally, also create a LicenseEvent/log entry for this activation (if my project already has an events/audit model).
+
+4. (Optional) Update /api/licenses/validate
+
+If there is an existing POST /api/licenses/validate endpoint:
+
+Leave it as-is for now, or
+
+Extend it to also accept a token and simply call verifyLicenseToken and return payload + reason.
+
+The key thing is that client apps will now primarily use /activate to get a token bound to their hardware ID.
+
+5. Admin UI
+
+My React admin UI currently handles listing licenses and creating them.
+Add a read-only view of activations on the license detail page:
+
+For each license, fetch:
+
+GET /api/licenses/:id
+
+
+and include an array of activations with hardwareId, publicIp, createdAt.
+
+Display them in a simple table under the license details.
+
+6. Deliverables
+
+Please:
+
+Modify the existing TypeScript/Express/Prisma project, not pseudocode.
+
+Show:
+
+Updated Prisma schema and migration for LicenseActivation and maxActivations.
+
+The new /api/licenses/activate route implementation.
+
+Updated payload types and signing helpers.
+
+Any small changes to license detail API to include activations.
+
+Example updates for the React admin license detail page to show activations.
+
+Assume this is running on Replit with PostgreSQL; keep the changes self-contained and ready to paste into my existing project.
