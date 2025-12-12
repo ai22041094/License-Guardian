@@ -10,6 +10,7 @@ import {
   extendLicenseSchema,
   createUserRequestSchema,
   updateUserRequestSchema,
+  activateLicenseRequestSchema,
   type LicensePayload 
 } from "@shared/schema";
 
@@ -196,7 +197,8 @@ export async function registerRoutes(
       }
 
       const events = await storage.getLicenseEvents(id);
-      res.json({ license, events });
+      const activations = await storage.getLicenseActivations(id);
+      res.json({ license, events, activations });
     } catch (error) {
       console.error("Get license error:", error);
       res.status(500).send("Failed to get license");
@@ -287,6 +289,111 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Validate license error:", error);
       res.status(500).json({ valid: false, reason: "MALFORMED" });
+    }
+  });
+
+  app.post("/api/licenses/activate", async (req, res) => {
+    try {
+      const validationResult = activateLicenseRequestSchema.safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          activated: false, 
+          reason: "MALFORMED",
+          details: validationResult.error.errors 
+        });
+      }
+
+      const { licenseKey, hardwareId } = validationResult.data;
+      const publicIp = req.ip || req.headers["x-forwarded-for"]?.toString() || "unknown";
+
+      const verifyResult = verifyLicenseKey(licenseKey);
+      
+      const dbLicense = await storage.getLicenseByKey(licenseKey);
+      
+      if (!dbLicense) {
+        return res.json({
+          activated: false,
+          reason: "NOT_FOUND",
+        });
+      }
+
+      if (dbLicense.status === "REVOKED") {
+        return res.json({
+          activated: false,
+          reason: "REVOKED",
+        });
+      }
+
+      if (dbLicense.status === "EXPIRED" || (!verifyResult.valid && verifyResult.reason === "EXPIRED")) {
+        return res.json({
+          activated: false,
+          reason: "EXPIRED",
+        });
+      }
+
+      if (!verifyResult.valid) {
+        return res.json({
+          activated: false,
+          reason: verifyResult.reason,
+        });
+      }
+
+      const existingActivation = await storage.getActivationByHardwareId(dbLicense.id, hardwareId);
+      if (existingActivation) {
+        await storage.createLicenseEvent({
+          licenseId: dbLicense.id,
+          eventType: "VALIDATED",
+          message: `License re-validated for existing hardware: ${hardwareId}`,
+          actor: "system",
+        });
+
+        return res.json({
+          activated: true,
+          reason: "ALREADY_ACTIVATED",
+          payload: verifyResult.payload,
+        });
+      }
+
+      const currentActivations = await storage.getLicenseActivations(dbLicense.id);
+      if (currentActivations.length >= dbLicense.maxActivations) {
+        await storage.createLicenseEvent({
+          licenseId: dbLicense.id,
+          eventType: "VALIDATED",
+          message: `Activation rejected: max activations (${dbLicense.maxActivations}) reached. Hardware: ${hardwareId}`,
+          actor: "system",
+        });
+
+        return res.json({
+          activated: false,
+          reason: "MAX_ACTIVATIONS_REACHED",
+          currentActivations: currentActivations.length,
+          maxActivations: dbLicense.maxActivations,
+        });
+      }
+
+      await storage.createLicenseActivation({
+        licenseId: dbLicense.id,
+        hardwareId,
+        publicIp,
+      });
+
+      await storage.createLicenseEvent({
+        licenseId: dbLicense.id,
+        eventType: "VALIDATED",
+        message: `License activated for new hardware: ${hardwareId} (IP: ${publicIp}). Activation ${currentActivations.length + 1}/${dbLicense.maxActivations}`,
+        actor: "system",
+      });
+
+      res.json({
+        activated: true,
+        reason: "OK",
+        payload: verifyResult.payload,
+        activationNumber: currentActivations.length + 1,
+        maxActivations: dbLicense.maxActivations,
+      });
+    } catch (error) {
+      console.error("Activate license error:", error);
+      res.status(500).json({ activated: false, reason: "INTERNAL_ERROR" });
     }
   });
 
