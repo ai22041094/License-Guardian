@@ -24,12 +24,13 @@ import {
   FormMessage,
   FormDescription,
 } from "@/components/ui/form";
-import { ArrowLeft, Key, Plus, AlertCircle, Calendar, User, Layers } from "lucide-react";
+import { ArrowLeft, Key, Plus, AlertCircle, Calendar, User, Layers, Monitor } from "lucide-react";
 
 const formSchema = z.object({
   tenantId: z.string().min(1, "Tenant ID is required"),
   modules: z.array(z.string()).min(1, "At least one module is required"),
   expiry: z.string().min(1, "Expiry date is required"),
+  maxActivations: z.coerce.number().min(1, "At least 1 activation required").max(1000, "Maximum 1000 activations"),
 });
 
 type FormValues = z.infer<typeof formSchema>;
@@ -52,6 +53,7 @@ export default function NewLicensePage() {
       tenantId: "",
       modules: [],
       expiry: "",
+      maxActivations: 1,
     },
   });
 
@@ -186,6 +188,32 @@ export default function NewLicensePage() {
                       </Popover>
                       <FormDescription>
                         When the license will expire and become invalid
+                      </FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
+                  name="maxActivations"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel className="text-sm font-medium flex items-center gap-2">
+                        <Monitor className="w-4 h-4" />
+                        Maximum Activations
+                      </FormLabel>
+                      <FormControl>
+                        <Input
+                          {...field}
+                          type="number"
+                          min={1}
+                          max={1000}
+                          data-testid="input-max-activations"
+                        />
+                      </FormControl>
+                      <FormDescription>
+                        Number of machines that can activate this license
                       </FormDescription>
                       <FormMessage />
                     </FormItem>

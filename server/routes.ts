@@ -144,7 +144,7 @@ export async function registerRoutes(
         });
       }
 
-      const { tenantId, modules, expiry, createdBy } = validationResult.data;
+      const { tenantId, modules, expiry, maxActivations, createdBy } = validationResult.data;
 
       const payload: LicensePayload = {
         tenantId,
@@ -160,6 +160,7 @@ export async function registerRoutes(
         expiry: new Date(expiry),
         licenseKey,
         status: "ACTIVE",
+        maxActivations: maxActivations || 1,
         createdBy,
       });
 

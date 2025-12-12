@@ -1,7 +1,7 @@
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useParams, Link } from "wouter";
 import { format } from "date-fns";
-import type { License, LicenseEvent } from "@shared/schema";
+import type { License, LicenseEvent, LicenseActivation } from "@shared/schema";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
@@ -25,6 +25,8 @@ import {
   Check,
   RefreshCw,
   CalendarPlus,
+  Monitor,
+  Globe,
 } from "lucide-react";
 import {
   Dialog,
@@ -42,6 +44,7 @@ import { useState } from "react";
 interface LicenseDetailResponse {
   license: License;
   events: LicenseEvent[];
+  activations: LicenseActivation[];
 }
 
 function StatusBadge({ status }: { status: string }) {
@@ -300,7 +303,7 @@ export default function LicenseDetailPage() {
     );
   }
 
-  const { license, events } = data;
+  const { license, events, activations } = data;
 
   return (
     <div className="p-6 space-y-6">
@@ -456,6 +459,53 @@ export default function LicenseDetailPage() {
                         <p className="text-sm mt-1">{event.message}</p>
                         <p className="text-xs text-muted-foreground mt-1">
                           {format(new Date(event.createdAt), "MMM d, yyyy 'at' h:mm a")}
+                        </p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="border-b px-6 py-4">
+              <div className="flex items-center justify-between gap-2 flex-wrap">
+                <div className="flex items-center gap-2">
+                  <Monitor className="w-5 h-5 text-muted-foreground" />
+                  <span className="font-medium">Machine Activations</span>
+                  <Badge variant="secondary" className="ml-2">
+                    {activations.length} / {license.maxActivations}
+                  </Badge>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent className="p-0">
+              {activations.length === 0 ? (
+                <div className="p-8 text-center text-muted-foreground">
+                  No machines activated yet
+                </div>
+              ) : (
+                <div className="divide-y">
+                  {activations.map((activation) => (
+                    <div
+                      key={activation.id}
+                      className="p-4 flex items-start gap-4"
+                      data-testid={`activation-${activation.id}`}
+                    >
+                      <div className="mt-0.5">
+                        <Monitor className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="font-mono text-sm break-all" data-testid={`text-hardware-id-${activation.id}`}>
+                          {activation.hardwareId}
+                        </div>
+                        <div className="flex items-center gap-2 mt-1 text-sm text-muted-foreground">
+                          <Globe className="w-3 h-3" />
+                          <span>{activation.publicIp || "Unknown IP"}</span>
+                        </div>
+                        <p className="text-xs text-muted-foreground mt-1">
+                          Activated on {format(new Date(activation.createdAt), "MMM d, yyyy 'at' h:mm a")}
                         </p>
                       </div>
                     </div>

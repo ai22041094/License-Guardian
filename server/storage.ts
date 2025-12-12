@@ -130,6 +130,7 @@ export class DatabaseStorage implements IStorage {
         expiry: license.expiry,
         licenseKey: license.licenseKey,
         status: license.status,
+        maxActivations: license.maxActivations,
         createdBy: license.createdBy,
       })
       .returning();

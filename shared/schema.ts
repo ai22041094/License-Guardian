@@ -144,6 +144,7 @@ export const createLicenseRequestSchema = z.object({
   tenantId: z.string().min(1, "Tenant ID is required"),
   modules: z.array(z.enum(AVAILABLE_MODULES)).min(1, "At least one module is required"),
   expiry: z.string().min(1, "Expiry date is required"),
+  maxActivations: z.number().min(1, "At least 1 activation required").max(1000).default(1),
   createdBy: z.string().min(1, "Creator is required"),
 });
 
