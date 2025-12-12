@@ -3,14 +3,18 @@ import { useLocation, Link } from "wouter";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
+import { format, parse, addDays, startOfToday } from "date-fns";
 import { AVAILABLE_MODULES } from "@shared/schema";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/lib/auth";
+import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardDescription } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Calendar as CalendarComponent } from "@/components/ui/calendar";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
   Form,
   FormControl,
@@ -80,9 +84,7 @@ export default function NewLicensePage() {
     createMutation.mutate(data);
   };
 
-  const tomorrow = new Date();
-  tomorrow.setDate(tomorrow.getDate() + 1);
-  const minDate = tomorrow.toISOString().split("T")[0];
+  const minDate = addDays(startOfToday(), 1);
 
   return (
     <div className="p-6 space-y-6">
@@ -143,19 +145,45 @@ export default function NewLicensePage() {
                   control={form.control}
                   name="expiry"
                   render={({ field }) => (
-                    <FormItem>
+                    <FormItem className="flex flex-col">
                       <FormLabel className="text-sm font-medium flex items-center gap-2">
                         <Calendar className="w-4 h-4" />
                         Expiry Date
                       </FormLabel>
-                      <FormControl>
-                        <Input
-                          {...field}
-                          type="date"
-                          min={minDate}
-                          data-testid="input-expiry"
-                        />
-                      </FormControl>
+                      <Popover>
+                        <PopoverTrigger asChild>
+                          <FormControl>
+                            <Button
+                              variant="outline"
+                              className={cn(
+                                "w-full pl-3 text-left font-normal justify-start",
+                                !field.value && "text-muted-foreground"
+                              )}
+                              data-testid="input-expiry"
+                            >
+                              <Calendar className="mr-2 h-4 w-4" />
+                              {field.value ? (
+                                format(parse(field.value, "yyyy-MM-dd", new Date()), "PPP")
+                              ) : (
+                                <span>Pick a date</span>
+                              )}
+                            </Button>
+                          </FormControl>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-auto p-0" align="start">
+                          <CalendarComponent
+                            mode="single"
+                            selected={field.value ? parse(field.value, "yyyy-MM-dd", new Date()) : undefined}
+                            onSelect={(date) => {
+                              if (date) {
+                                field.onChange(format(date, "yyyy-MM-dd"));
+                              }
+                            }}
+                            disabled={(date) => date < minDate}
+                            initialFocus
+                          />
+                        </PopoverContent>
+                      </Popover>
                       <FormDescription>
                         When the license will expire and become invalid
                       </FormDescription>
